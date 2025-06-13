@@ -26,7 +26,7 @@ def hacer_pregunta(jugador, pregunta):
     opciones = [pregunta["opcion1"], pregunta["opcion2"], pregunta["opcion3"]]
     random.shuffle(opciones)
 
-    print(f"\n🎯 {jugador['nombre']} - Categoría: {pregunta['categoria']} - Puntaje: {jugador['puntaje']}")
+    print(f"\n🎯 {jugador['nombre']} - Categoría: {pregunta['categoria']} - Puntaje: {jugador['puntaje']} - Racha: {jugador['racha']}")
     print(pregunta["pregunta"])
     for i, op in enumerate(opciones, 1):
         print(f"{i}. {op}")
@@ -40,8 +40,12 @@ def hacer_pregunta(jugador, pregunta):
     if seleccion == pregunta["opcion_correcta"]:
         print("✅ Correcto")
         jugador["puntaje"] += 1
+        jugador["racha"] += 1
+        if jugador["racha"] >= 3:
+            print(f"🔥 ¡{jugador['nombre']} está en racha de {jugador['racha']} aciertos!")
     else:
         print(f"❌ Incorrecto. Era: {pregunta['opcion_correcta']}")
+        jugador["racha"] = 0  # Se reinicia la racha
 
 def jugar():
     print("🎉 Bienvenidos a Preguntados 🎉\n")
@@ -51,7 +55,8 @@ def jugar():
         nombre = input(f"Ingrese el nombre del Jugador {i+1}: ")
         jugadores.append({
             "nombre": nombre,
-            "puntaje": 0
+            "puntaje": 0,
+            "racha": 0
         })
 
     for ronda in range(RONDAS_POR_JUGADOR):
@@ -71,5 +76,5 @@ def jugar():
     else:
         print("\n🤝 ¡Empate!")
 
-if __name__ == "__main__":
+if _name_ == "_main_":
     jugar()
