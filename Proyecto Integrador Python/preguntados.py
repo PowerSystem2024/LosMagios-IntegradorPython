@@ -13,43 +13,47 @@ conn = mysql.connector.connect(
 )
 cursor = conn.cursor(dictionary=True)
 
+# Borrar datos anteriores
+cursor.execute("DELETE FROM historial")
+cursor.execute("DELETE FROM jugadores")
+conn.commit()
+
+RONDAS_POR_JUGADOR = 5
 TIEMPO_LIMITE = 10
 respuesta_usuario = None
-tiempo_terminado = False
+#tiempo_terminado = false
 
-def obtener_pregunta_aleatoria(categoria_nombre):
+def obtener_pregunta_aleatoria():
     cursor.execute("""
         SELECT p.*, c.nombre AS categoria 
         FROM preguntas p 
         JOIN categorias c ON p.categoria_id = c.id 
-        WHERE c.nombre = %s
         ORDER BY RAND() LIMIT 1
-    """, (categoria_nombre,))
+    """, )
     return cursor.fetchone()
 
 def esperar_respuesta():
     global respuesta_usuario
-    respuesta_usuario = input("\n⏳ Tenés 10 segundos. Escribí tu respuesta (1-3): ")
+    respuesta_usuario = input("\n⏳ Escribí tu respuesta (1-3): ")
 
-def cuenta_regresiva():
-    global tiempo_terminado
-    for i in range(TIEMPO_LIMITE, 0, -1):
-        print(f"⏰ Tiempo restante: {i} segundos", end='\r')
-        time.sleep(1)
-    tiempo_terminado = True
+
+#def cuenta_regresiva():
+#    global tiempo_terminad
+#    for i in range(TIEMPO_LIMITE, 0, -1):
+#        print(f"⏰ Tiempo restante: {i} segundos", end='\r')
+#        time.sleep(1)
+ #   tiempo_terminado = True
 
 def hacer_pregunta(jugador, pregunta):
-    global respuesta_usuario, tiempo_terminado
+    global respuesta_usuario
     respuesta_usuario = None
-    tiempo_terminado = False
+#    tiempo_terminado = false
 
-    opciones_posibles = [pregunta["opcion1"], pregunta["opcion2"], pregunta["opcion3"], pregunta["opcion_correcta"]]
+    opciones = [pregunta["opcion1"], pregunta["opcion2"], pregunta["opcion3"]]
 
-    if pregunta["opcion_correcta"] not in opciones_posibles:
-        opciones_posibles.append(pregunta["opcion_correcta"])
-
-    incorrectas = [op for op in opciones_posibles if op != pregunta["opcion_correcta"]]
-    opciones = random.sample(incorrectas, 2) + [pregunta["opcion_correcta"]]
+    if pregunta["opcion_correcta"] not in opciones:
+        opciones.append(pregunta["opcion_correcta"])
+    opciones = random.sample(opciones, 3)
     random.shuffle(opciones)
 
     print(f"\n🎯 {jugador['nombre']} - Categoría: {pregunta['categoria']} - Puntaje: {jugador['puntaje']} - Racha: {jugador['racha']}")
@@ -57,15 +61,14 @@ def hacer_pregunta(jugador, pregunta):
     for i, op in enumerate(opciones, 1):
         print(f"{i}. {op}")
 
-    hilo_respuesta = threading.Thread(target=esperar_respuesta)
-    hilo_tiempo = threading.Thread(target=cuenta_regresiva)
+    print(f"⏳ Tenés {TIEMPO_LIMITE} segundos para responder...")
 
+    hilo_respuesta = threading.Thread(target=esperar_respuesta)
     hilo_respuesta.start()
-    hilo_tiempo.start()
 
     hilo_respuesta.join(timeout=TIEMPO_LIMITE)
 
-    if respuesta_usuario is None:
+    if hilo_respuesta.is_alive():
         print("\n⏰ ¡Se acabó el tiempo! Turno perdido.")
         jugador["racha"] = 0
         return
@@ -76,7 +79,9 @@ def hacer_pregunta(jugador, pregunta):
         return
 
     seleccion = opciones[int(respuesta_usuario) - 1]
-    if seleccion == pregunta["opcion_correcta"]:
+    fue_correcta = (seleccion == pregunta["opcion_correcta"])
+
+    if fue_correcta:
         print("✅ Correcto")
         jugador["puntaje"] += 1
         jugador["racha"] += 1
@@ -84,7 +89,22 @@ def hacer_pregunta(jugador, pregunta):
             print(f"🔥 ¡{jugador['nombre']} está en racha de {jugador['racha']} aciertos!")
     else:
         print(f"❌ Incorrecto. Era: {pregunta['opcion_correcta']}")
-        jugador["racha"] = 0
+        jugador["racha"] = 0 #se reinicia la racha
+
+    cursor.execute("SELECT id FROM jugadores WHERE nombre = %s", (jugador["nombre"],))
+    resultado = cursor.fetchone()
+    if resultado:
+        jugador_id = resultado["id"]
+    else:
+        cursor.execute("INSERT INTO jugadores (nombre, puntaje) VALUES (%s, %s)", (jugador["nombre"], 0))
+        conn.commit()
+        jugador_id = cursor.lastrowid
+
+    cursor.execute(
+        "INSERT INTO historial (jugador_id, pregunta_id, fue_correcta) VALUES (%s, %s, %s)",
+        (jugador_id, pregunta["id"], fue_correcta)
+    )
+    conn.commit()
 
 def jugar():
     print("🎉 Bienvenidos a Preguntados 🎉\n")
@@ -92,25 +112,16 @@ def jugar():
     jugadores = []
     for i in range(2):
         nombre = input(f"Ingrese el nombre del Jugador {i+1}: ")
-        jugadores.append({
-            "nombre": nombre,
-            "puntaje": 0,
-            "racha": 0
-        })
+        jugadores.append({"nombre": nombre, "puntaje": 0, "racha": 0})
 
-    categorias = ["Ciencia", "Historia", "Geografía", "Arte", "Deportes"]
-
-    for categoria in categorias:
-        print(f"\n🔍 Cambiamos de categoría: {categoria} 🧠")
-        for ronda in range(2):
-            for jugador in jugadores:
-                print(f"\n🔔 Ronda de {categoria} para {jugador['nombre']}")
-                pregunta = obtener_pregunta_aleatoria(categoria)
-                if pregunta:
-                    hacer_pregunta(jugador, pregunta)
-                else:
-                    print(f"⚠️ No hay preguntas disponibles para la categoría: {categoria}")
-                    continue
+    for ronda in range(RONDAS_POR_JUGADOR):
+        for jugador in jugadores:
+            print(f"\n🔔 Ronda {ronda + 1} para {jugador['nombre']}")
+            pregunta = obtener_pregunta_aleatoria()
+            if pregunta:
+                hacer_pregunta(jugador, pregunta)
+            else:
+                print("⚠️ No hay preguntas disponibles.")
 
     print("\n🎯 Resultado final:")
     for j in jugadores:
@@ -123,5 +134,34 @@ def jugar():
     else:
         print("\n🤝 ¡Empate!")
 
+    return jugadores
+
 if __name__ == "__main__":
-    jugar()
+    jugadores = jugar()
+
+    for j in jugadores:
+        cursor.execute("UPDATE jugadores SET puntaje = %s WHERE nombre = %s", (j["puntaje"], j["nombre"]))
+    conn.commit()
+
+    print("\n--- RESUMEN DEL JUEGO ---")
+
+    cursor.execute("SELECT COUNT(*) AS total FROM historial")
+    row = cursor.fetchone()
+    print(f"Total de preguntas respondidas: {row['total']}")
+
+    cursor.execute("SELECT COUNT(*) AS total FROM historial WHERE fue_correcta = TRUE")
+    row = cursor.fetchone()
+    print(f"Respuestas correctas: {row['total']}")
+
+    cursor.execute("SELECT COUNT(*) AS total FROM historial WHERE fue_correcta = FALSE")
+    row = cursor.fetchone()
+    print(f"Respuestas incorrectas: {row['total']}")
+
+    cursor.execute("SELECT nombre, puntaje FROM jugadores ORDER BY puntaje DESC")
+    jugadores = cursor.fetchall()
+    print("\nPuntajes de jugadores:")
+    if jugadores:
+        for jugador in jugadores:
+            print(f"- {jugador['nombre']}: {jugador['puntaje']} puntos")
+    else:
+        print("No hay jugadores registrados.")
