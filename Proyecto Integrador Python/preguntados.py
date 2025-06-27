@@ -3,7 +3,7 @@ import random
 import threading
 import time
 
-# Conexión a la base de datos
+Conexión a la base de datos
 conn = mysql.connector.connect(
     host="localhost",
     user="root",
@@ -14,14 +14,13 @@ conn = mysql.connector.connect(
 cursor = conn.cursor(dictionary=True)
 
 # Borrar datos anteriores
-cursor.execute("DELETE FROM historial")
-cursor.execute("DELETE FROM jugadores")
-conn.commit()
+#cursor.execute("DELETE FROM historial")
+#cursor.execute("DELETE FROM jugadores")
+#conn.commit()
 
 RONDAS_POR_JUGADOR = 5
 TIEMPO_LIMITE = 10
 respuesta_usuario = None
-#tiempo_terminado = false
 
 def obtener_pregunta_aleatoria():
     cursor.execute("""
@@ -29,25 +28,16 @@ def obtener_pregunta_aleatoria():
         FROM preguntas p 
         JOIN categorias c ON p.categoria_id = c.id 
         ORDER BY RAND() LIMIT 1
-    """, )
+    """)
     return cursor.fetchone()
 
 def esperar_respuesta():
     global respuesta_usuario
     respuesta_usuario = input("\n⏳ Escribí tu respuesta (1-3): ")
 
-
-#def cuenta_regresiva():
-#    global tiempo_terminad
-#    for i in range(TIEMPO_LIMITE, 0, -1):
-#        print(f"⏰ Tiempo restante: {i} segundos", end='\r')
-#        time.sleep(1)
- #   tiempo_terminado = True
-
 def hacer_pregunta(jugador, pregunta):
     global respuesta_usuario
     respuesta_usuario = None
-#    tiempo_terminado = false
 
     opciones = [pregunta["opcion1"], pregunta["opcion2"], pregunta["opcion3"]]
 
@@ -56,7 +46,7 @@ def hacer_pregunta(jugador, pregunta):
     opciones = random.sample(opciones, 3)
     random.shuffle(opciones)
 
-    print(f"\n🎯 {jugador['nombre']} - Categoría: {pregunta['categoria']} - Puntaje: {jugador['puntaje']} - Racha: {jugador['racha']}")
+    print(f"\n🎯 {jugador['nombre']} - Categoría: {pregunta['categoria']} - Puntaje: {jugador['puntaje']} - Racha: {jugador['racha']} - Vidas: {jugador['vidas']}")
     print(pregunta["pregunta"])
     for i, op in enumerate(opciones, 1):
         print(f"{i}. {op}")
@@ -65,17 +55,20 @@ def hacer_pregunta(jugador, pregunta):
 
     hilo_respuesta = threading.Thread(target=esperar_respuesta)
     hilo_respuesta.start()
-
     hilo_respuesta.join(timeout=TIEMPO_LIMITE)
 
     if hilo_respuesta.is_alive():
         print("\n⏰ ¡Se acabó el tiempo! Turno perdido.")
         jugador["racha"] = 0
+        jugador["vidas"] -= 1
+        print(f"💔 {jugador['nombre']} perdió una vida. Vidas restantes: {jugador['vidas']}")
         return
 
     if respuesta_usuario not in ['1', '2', '3']:
         print("❌ Respuesta inválida.")
         jugador["racha"] = 0
+        jugador["vidas"] -= 1
+        print(f"💔 {jugador['nombre']} perdió una vida. Vidas restantes: {jugador['vidas']}")
         return
 
     seleccion = opciones[int(respuesta_usuario) - 1]
@@ -89,7 +82,9 @@ def hacer_pregunta(jugador, pregunta):
             print(f"🔥 ¡{jugador['nombre']} está en racha de {jugador['racha']} aciertos!")
     else:
         print(f"❌ Incorrecto. Era: {pregunta['opcion_correcta']}")
-        jugador["racha"] = 0 #se reinicia la racha
+        jugador["racha"] = 0
+        jugador["vidas"] -= 1
+        print(f"💔 {jugador['nombre']} perdió una vida. Vidas restantes: {jugador['vidas']}")
 
     cursor.execute("SELECT id FROM jugadores WHERE nombre = %s", (jugador["nombre"],))
     resultado = cursor.fetchone()
@@ -112,11 +107,14 @@ def jugar():
     jugadores = []
     for i in range(2):
         nombre = input(f"Ingrese el nombre del Jugador {i+1}: ")
-        jugadores.append({"nombre": nombre, "puntaje": 0, "racha": 0})
+        jugadores.append({"nombre": nombre, "puntaje": 0, "racha": 0, "vidas": 3})
 
     for ronda in range(RONDAS_POR_JUGADOR):
         for jugador in jugadores:
-            print(f"\n🔔 Ronda {ronda + 1} para {jugador['nombre']}")
+            if jugador["vidas"] <= 0:
+                print(f"\n❌ {jugador['nombre']} está eliminado. Sin vidas.")
+                continue
+            print(f"\n🔔 Ronda {ronda + 1} para {jugador['nombre']} (Vidas: {jugador['vidas']})")
             pregunta = obtener_pregunta_aleatoria()
             if pregunta:
                 hacer_pregunta(jugador, pregunta)
@@ -125,9 +123,13 @@ def jugar():
 
     print("\n🎯 Resultado final:")
     for j in jugadores:
-        print(f"{j['nombre']}: {j['puntaje']} puntos")
+        print(f"{j['nombre']}: {j['puntaje']} puntos (Vidas restantes: {j['vidas']})")
 
-    if jugadores[0]['puntaje'] > jugadores[1]['puntaje']:
+    jugadores_vivos = [j for j in jugadores if j["vidas"] > 0]
+
+    if len(jugadores_vivos) == 0:
+        print("\n☠️ Todos los jugadores fueron eliminados.")
+    elif jugadores[0]['puntaje'] > jugadores[1]['puntaje']:
         print(f"\n🏆 ¡Ganador: {jugadores[0]['nombre']}!")
     elif jugadores[1]['puntaje'] > jugadores[0]['puntaje']:
         print(f"\n🏆 ¡Ganador: {jugadores[1]['nombre']}!")
